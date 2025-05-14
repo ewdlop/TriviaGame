@@ -1,6 +1,6 @@
-from langchain.embeddings import OpenAIEmbeddings
+from langchain.embeddings import OllamaEmbeddings
 from langchain.vectorstores import Chroma
-from langchain.chat_models import ChatOpenAI
+from langchain.llms import Ollama
 from langchain.prompts import ChatPromptTemplate
 import os
 from typing import List, Dict
@@ -8,8 +8,10 @@ import json
 
 class RAGService:
     def __init__(self):
-        self.embeddings = OpenAIEmbeddings()
-        self.llm = ChatOpenAI(temperature=0.7)
+        # 使用Ollama的embeddings
+        self.embeddings = OllamaEmbeddings(model="llama2")
+        # 使用Ollama的LLM
+        self.llm = Ollama(model="llama2", temperature=0.7)
         self.vectorstore = Chroma(
             persist_directory="./data",
             embedding_function=self.embeddings
@@ -38,7 +40,7 @@ class RAGService:
         context = "\n".join([doc.page_content for doc in docs])
         
         # 生成问题
-        response = await self.llm.ainvoke(
+        response = self.llm.invoke(
             self.question_template.format_messages(
                 topic=topic,
                 difficulty=difficulty
@@ -47,7 +49,7 @@ class RAGService:
         
         try:
             # 解析响应
-            question_data = json.loads(response.content)
+            question_data = json.loads(response)
             return question_data
         except json.JSONDecodeError:
             # 如果解析失败，返回一个默认问题

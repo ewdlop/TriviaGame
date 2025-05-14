@@ -14,7 +14,11 @@ interface GenerateQuestionRequest {
 
 export const triviaApi = createApi({
   reducerPath: 'triviaApi',
-  baseQuery: fetchBaseQuery({ baseUrl: 'http://localhost:8000' }),
+  baseQuery: fetchBaseQuery({ 
+    baseUrl: 'http://localhost:8000',
+    // 设置较长的超时时间，因为Ollama生成可能需要更长时间
+    timeout: 30000,
+  }),
   endpoints: (builder) => ({
     generateQuestion: builder.mutation<Question, GenerateQuestionRequest>({
       query: (body) => ({

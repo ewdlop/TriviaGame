@@ -37,9 +37,9 @@ async def root():
     return {"message": "Trivia Game API"}
 
 @app.post("/api/generate-question", response_model=QuestionResponse)
-async def generate_question(request: QuestionRequest):
+def generate_question(request: QuestionRequest):
     try:
-        question_data = await rag_service.generate_question(
+        question_data = rag_service.generate_question(
             request.question,
             request.difficulty
         )
