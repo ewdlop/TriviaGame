@@ -1,6 +1,6 @@
 from langchain.embeddings import OllamaEmbeddings
 from langchain.vectorstores import Chroma
-from langchain.llms import Ollama
+from langchain_community.chat_models import ChatOllama
 from langchain.prompts import ChatPromptTemplate
 from document_service import DocumentService
 import os
@@ -12,7 +12,7 @@ class RAGService:
         # 使用Ollama的embeddings
         self.embeddings = OllamaEmbeddings(model="llama2")
         # 使用Ollama的LLM
-        self.llm = Ollama(model="llama2", temperature=0.7)
+        self.llm = ChatOllama(model="llama2", temperature=0.7)
         self.document_service = DocumentService()
         
         # 初始化提示模板
