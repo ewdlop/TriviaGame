@@ -27,17 +27,25 @@ const TriviaGame: React.FC = () => {
   const [showResult, setShowResult] = useState(false);
   const [documentType, setDocumentType] = useState<string>('pdf');
   const [documentContent, setDocumentContent] = useState<string>('');
+  const [isDocumentLoaded, setIsDocumentLoaded] = useState(false);
 
   const handleDocumentTypeChange = (event: SelectChangeEvent) => {
-    setDocumentType(event.target.value);
+    if (!isDocumentLoaded) {
+      setDocumentType(event.target.value);
+    }
   };
 
   const handleDocumentContentChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setDocumentContent(event.target.value);
+    if (!isDocumentLoaded) {
+      setDocumentContent(event.target.value);
+    }
   };
 
   const handleStartGame = () => {
-    dispatch(fetchQuestions({ documentType, documentContent }));
+    if (!isDocumentLoaded && documentContent) {
+      dispatch(fetchQuestions({ documentType, documentContent }));
+      setIsDocumentLoaded(true);
+    }
   };
 
   const handleAnswerSubmit = () => {
@@ -49,6 +57,13 @@ const TriviaGame: React.FC = () => {
   };
 
   const handleNextQuestion = () => {
+    setShowResult(false);
+  };
+
+  const handleResetGame = () => {
+    setIsDocumentLoaded(false);
+    setDocumentContent('');
+    setSelectedAnswer('');
     setShowResult(false);
   };
 
@@ -66,6 +81,14 @@ const TriviaGame: React.FC = () => {
     return (
       <Container maxWidth="md" sx={{ mt: 4 }}>
         <Alert severity="error">{error}</Alert>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleResetGame}
+          sx={{ mt: 2 }}
+        >
+          重新开始
+        </Button>
       </Container>
     );
   }
@@ -86,6 +109,7 @@ const TriviaGame: React.FC = () => {
               value={documentType}
               label="文档类型"
               onChange={handleDocumentTypeChange}
+              disabled={isDocumentLoaded}
             >
               <MenuItem value="pdf">PDF</MenuItem>
               <MenuItem value="markdown">Markdown</MenuItem>
@@ -98,13 +122,14 @@ const TriviaGame: React.FC = () => {
             label="文档内容"
             value={documentContent}
             onChange={handleDocumentContentChange}
+            disabled={isDocumentLoaded}
             sx={{ mb: 2 }}
           />
           <Button
             variant="contained"
             color="primary"
             onClick={handleStartGame}
-            disabled={!documentContent}
+            disabled={!documentContent || isDocumentLoaded}
           >
             开始游戏
           </Button>
@@ -136,6 +161,7 @@ const TriviaGame: React.FC = () => {
             onClick={() => setSelectedAnswer(option)}
             fullWidth
             sx={{ mb: 1 }}
+            disabled={showResult}
           >
             {option}
           </Button>
@@ -157,6 +183,16 @@ const TriviaGame: React.FC = () => {
             >
               {currentQuestionIndex < questions.length - 1 ? '下一题' : '结束游戏'}
             </Button>
+            {currentQuestionIndex === questions.length - 1 && (
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={handleResetGame}
+                sx={{ mt: 2, ml: 2 }}
+              >
+                重新开始
+              </Button>
+            )}
           </Box>
         ) : (
           <Button
