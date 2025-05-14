@@ -15,22 +15,30 @@ import {
   Alert,
 } from '@mui/material';
 import { RootState } from '../store/store';
-import { generateQuestion, incrementScore } from '../store/triviaSlice';
+import { incrementScore } from '../store/triviaSlice';
+import { useGenerateQuestionMutation } from '../store/triviaApi';
 
 const TriviaGame: React.FC = () => {
   const dispatch = useDispatch();
-  const { currentQuestion, loading, error, score } = useSelector(
-    (state: RootState) => state.trivia
-  );
+  const { score } = useSelector((state: RootState) => state.trivia);
+  const [generateQuestion, { data: currentQuestion, isLoading, error }] = useGenerateQuestionMutation();
+  
   const [topic, setTopic] = useState('');
   const [difficulty, setDifficulty] = useState('medium');
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
 
-  const handleGenerateQuestion = () => {
-    dispatch(generateQuestion({ topic, difficulty }));
-    setSelectedAnswer(null);
-    setShowExplanation(false);
+  const handleGenerateQuestion = async () => {
+    try {
+      await generateQuestion({
+        question: topic,
+        difficulty,
+      }).unwrap();
+      setSelectedAnswer(null);
+      setShowExplanation(false);
+    } catch (err) {
+      console.error('Failed to generate question:', err);
+    }
   };
 
   const handleAnswerSelect = (answer: string) => {
@@ -73,15 +81,15 @@ const TriviaGame: React.FC = () => {
         <Button
           variant="contained"
           onClick={handleGenerateQuestion}
-          disabled={loading || !topic}
+          disabled={isLoading || !topic}
         >
-          {loading ? <CircularProgress size={24} /> : '生成问题'}
+          {isLoading ? <CircularProgress size={24} /> : '生成问题'}
         </Button>
       </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
+          {'生成问题失败'}
         </Alert>
       )}
 
