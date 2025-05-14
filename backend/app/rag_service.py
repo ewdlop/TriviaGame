@@ -2,6 +2,7 @@ from langchain.embeddings import OllamaEmbeddings
 from langchain.vectorstores import Chroma
 from langchain.llms import Ollama
 from langchain.prompts import ChatPromptTemplate
+from document_service import DocumentService
 import os
 from typing import List, Dict
 import json
@@ -12,38 +13,37 @@ class RAGService:
         self.embeddings = OllamaEmbeddings(model="llama2")
         # 使用Ollama的LLM
         self.llm = Ollama(model="llama2", temperature=0.7)
-        self.vectorstore = Chroma(
-            persist_directory="./data",
-            embedding_function=self.embeddings
-        )
+        self.document_service = DocumentService()
         
         # 初始化提示模板
         self.question_template = ChatPromptTemplate.from_messages([
-            ("system", """你是一个专业的问答游戏出题者。基于给定的主题，生成一个有趣且具有教育意义的问答题目。
+            ("system", """你是一个专业的问答游戏出题者。基于给定的主题和相关文档内容，生成一个有趣且具有教育意义的问答题目。
             请确保：
             1. 问题清晰明确
             2. 选项合理且具有迷惑性
             3. 解释详细且易于理解
             4. 难度符合要求
+            5. 问题内容要基于提供的文档内容
             
             请以JSON格式返回，包含以下字段：
             - question: 问题文本
             - options: 选项列表（4个选项）
             - correct_answer: 正确答案
             - explanation: 详细解释"""),
-            ("user", "主题：{topic}\n难度：{difficulty}")
+            ("user", "主题：{topic}\n难度：{difficulty}\n相关文档内容：{context}")
         ])
 
-    async def generate_question(self, topic: str, difficulty: str) -> Dict:
+    def generate_question(self, topic: str, difficulty: str) -> Dict:
         # 使用RAG检索相关上下文
-        docs = self.vectorstore.similarity_search(topic, k=3)
-        context = "\n".join([doc.page_content for doc in docs])
+        context = self.document_service.search_documents(topic)
+        context_text = "\n".join(context)
         
         # 生成问题
         response = self.llm.invoke(
             self.question_template.format_messages(
                 topic=topic,
-                difficulty=difficulty
+                difficulty=difficulty,
+                context=context_text
             )
         )
         

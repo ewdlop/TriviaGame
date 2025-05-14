@@ -27,7 +27,14 @@ export const triviaApi = createApi({
         body,
       }),
     }),
+    uploadDocument: builder.mutation<{ message: string }, FormData>({
+      query: (formData) => ({
+        url: '/api/upload-document',
+        method: 'POST',
+        body: formData,
+      }),
+    }),
   }),
 });
 
-export const { useGenerateQuestionMutation } = triviaApi; 
+export const { useGenerateQuestionMutation, useUploadDocumentMutation } = triviaApi; 

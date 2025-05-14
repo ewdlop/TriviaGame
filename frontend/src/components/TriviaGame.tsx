@@ -13,20 +13,38 @@ import {
   MenuItem,
   CircularProgress,
   Alert,
+  Paper,
 } from '@mui/material';
 import { RootState } from '../store/store';
 import { incrementScore } from '../store/triviaSlice';
-import { useGenerateQuestionMutation } from '../store/triviaApi';
+import { useGenerateQuestionMutation, useUploadDocumentMutation } from '../store/triviaApi';
 
 const TriviaGame: React.FC = () => {
   const dispatch = useDispatch();
   const { score } = useSelector((state: RootState) => state.trivia);
-  const [generateQuestion, { data: currentQuestion, isLoading, error }] = useGenerateQuestionMutation();
+  const [generateQuestion, { data: currentQuestion, isLoading: isGenerating, error: generateError }] = useGenerateQuestionMutation();
+  const [uploadDocument, { isLoading: isUploading, error: uploadError }] = useUploadDocumentMutation();
   
   const [topic, setTopic] = useState('');
   const [difficulty, setDifficulty] = useState('medium');
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const result = await uploadDocument(formData).unwrap();
+      setUploadMessage(result.message);
+    } catch (err) {
+      console.error('Failed to upload document:', err);
+    }
+  };
 
   const handleGenerateQuestion = async () => {
     try {
@@ -58,6 +76,38 @@ const TriviaGame: React.FC = () => {
         得分: {score}
       </Typography>
 
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          上传文档
+        </Typography>
+        <input
+          accept=".pdf,.md,.txt"
+          style={{ display: 'none' }}
+          id="document-upload"
+          type="file"
+          onChange={handleFileUpload}
+        />
+        <label htmlFor="document-upload">
+          <Button
+            variant="contained"
+            component="span"
+            disabled={isUploading}
+          >
+            {isUploading ? <CircularProgress size={24} /> : '选择文档'}
+          </Button>
+        </label>
+        {uploadMessage && (
+          <Alert severity="success" sx={{ mt: 2 }}>
+            {uploadMessage}
+          </Alert>
+        )}
+        {uploadError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            文档上传失败
+          </Alert>
+        )}
+      </Paper>
+
       <Box sx={{ mb: 3 }}>
         <TextField
           fullWidth
@@ -81,15 +131,15 @@ const TriviaGame: React.FC = () => {
         <Button
           variant="contained"
           onClick={handleGenerateQuestion}
-          disabled={isLoading || !topic}
+          disabled={isGenerating || !topic}
         >
-          {isLoading ? <CircularProgress size={24} /> : '生成问题'}
+          {isGenerating ? <CircularProgress size={24} /> : '生成问题'}
         </Button>
       </Box>
 
-      {error && (
+      {generateError && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          {'生成问题失败'}
+          生成问题失败
         </Alert>
       )}
 
