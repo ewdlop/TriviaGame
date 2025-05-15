@@ -51,31 +51,74 @@ class DocumentService:
             return False
         return datetime.now() - timestamp < self._cache_expiry
 
+    def get_document_content(self, file_path: str) -> str:
+        """获取文档内容"""
+        try:
+            print(f"Getting content from: {file_path}")
+            file_type = self._get_file_type(file_path)
+            print(f"File type detected: {file_type}")
+            
+            # 根据文件类型选择加载器
+            if file_type == 'application/pdf':
+                loader = PyPDFLoader(file_path)
+            elif file_type in ['text/plain', 'text/markdown']:
+                loader = TextLoader(file_path)
+            else:
+                raise ValueError(f"不支持的文件类型: {file_type}")
+
+            # 加载文档
+            print("Loading document...")
+            documents = loader.load()
+            print(f"Loaded {len(documents)} document chunks")
+            
+            # 合并所有文档内容
+            content = "\n".join(doc.page_content for doc in documents)
+            print(f"Extracted content length: {len(content)}")
+            
+            return content
+            
+        except Exception as e:
+            print(f"Error in get_document_content: {str(e)}")
+            raise
+
     def process_document(self, file_path: str) -> None:
         """处理文档并存储到向量数据库"""
-        file_type = self._get_file_type(file_path)
-        
-        # 根据文件类型选择加载器
-        if file_type == 'application/pdf':
-            loader = PyPDFLoader(file_path)
-        elif file_type in ['text/plain', 'text/markdown']:
-            loader = TextLoader(file_path)
-        else:
-            raise ValueError(f"不支持的文件类型: {file_type}")
+        try:
+            print(f"Processing document: {file_path}")
+            file_type = self._get_file_type(file_path)
+            print(f"File type detected: {file_type}")
+            
+            # 根据文件类型选择加载器
+            if file_type == 'application/pdf':
+                loader = PyPDFLoader(file_path)
+            elif file_type in ['text/plain', 'text/markdown']:
+                loader = TextLoader(file_path)
+            else:
+                raise ValueError(f"不支持的文件类型: {file_type}")
 
-        # 加载文档
-        documents = loader.load()
-        
-        # 分割文档
-        splits = self.text_splitter.split_documents(documents)
-        
-        # 存储到向量数据库
-        for i, split in enumerate(splits):
-            self.collection.add(
-                documents=[split.page_content],
-                metadatas=[{"source": file_path}],
-                ids=[f"{file_path}_{i}"]
-            )
+            # 加载文档
+            print("Loading document...")
+            documents = loader.load()
+            print(f"Loaded {len(documents)} document chunks")
+            
+            # 分割文档
+            print("Splitting document...")
+            splits = self.text_splitter.split_documents(documents)
+            print(f"Split into {len(splits)} chunks")
+            
+            # 存储到向量数据库
+            print("Storing in vector database...")
+            for i, split in enumerate(splits):
+                self.collection.add(
+                    documents=[split.page_content],
+                    metadatas=[{"source": file_path}],
+                    ids=[f"{file_path}_{i}"]
+                )
+            print("Document processing completed")
+            
+        except Exception as e:
+            print(f"Error in process_document: {str(e)}")
+            raise
 
     def search_documents(self, query: str, k: int = 3) -> List[str]:
         """搜索相关文档片段"""
