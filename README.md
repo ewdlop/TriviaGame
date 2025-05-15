@@ -102,6 +102,10 @@ npm start
 - macOS 用户需要安装 libmagic
 - Windows 用户需要安装 python-magic-bin
 
+### 常见问题解决
+
+#### 端口冲突
+
 ## 许可证
 
 MIT 
