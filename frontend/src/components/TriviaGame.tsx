@@ -15,6 +15,11 @@ import {
   MenuItem,
   SelectChangeEvent,
   Stack,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  Card,
+  CardContent,
 } from '@mui/material';
 import { AppDispatch, RootState } from '../store/store';
 import { fetchQuestions, submitAnswer, uploadFile, nextQuestion, resetGame } from '../store/triviaSlice';
@@ -24,12 +29,14 @@ const TriviaGame: React.FC = () => {
   const { questions, currentQuestionIndex, score, loading, error } = useSelector(
     (state: RootState) => state.trivia
   );
-  const [selectedAnswer, setSelectedAnswer] = useState<string>('');
-  const [showResult, setShowResult] = useState(false);
+  const [topic, setTopic] = useState('');
   const [documentType, setDocumentType] = useState<string>('pdf');
   const [documentContent, setDocumentContent] = useState<string>('');
   const [isDocumentLoaded, setIsDocumentLoaded] = useState(false);
   const [fileName, setFileName] = useState<string>('');
+  const [selectedAnswer, setSelectedAnswer] = useState('');
+  const [isCorrect, setIsCorrect] = useState(false);
+  const [showExplanation, setShowExplanation] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDocumentTypeChange = (event: SelectChangeEvent) => {
@@ -54,17 +61,19 @@ const TriviaGame: React.FC = () => {
     }
   };
 
-  const handleAnswerSubmit = () => {
-    if (selectedAnswer) {
-      dispatch(submitAnswer(selectedAnswer));
-      setShowResult(true);
-    }
+  const handleAnswerSubmit = (answer: string) => {
+    setSelectedAnswer(answer);
+    const isAnswerCorrect = answer === currentQuestion?.correct_answer;
+    setIsCorrect(isAnswerCorrect);
+    setShowExplanation(true);
+    dispatch(submitAnswer(answer));
   };
 
   const handleNextQuestion = () => {
-    setShowResult(false);
-    setSelectedAnswer('');
     dispatch(nextQuestion());
+    setSelectedAnswer('');
+    setIsCorrect(false);
+    setShowExplanation(false);
   };
 
   const handleResetGame = () => {
@@ -72,8 +81,42 @@ const TriviaGame: React.FC = () => {
     setDocumentContent('');
     setFileName('');
     setSelectedAnswer('');
-    setShowResult(false);
+    setShowExplanation(false);
     dispatch(resetGame());
+  };
+
+  const handleGenerateDirectly = async () => {
+    if (!topic.trim()) {
+      alert('请输入主题');
+      return;
+    }
+    try {
+      console.log('正在发送生成问题请求...');
+      const response = await fetch('http://localhost:5001/generate-directly', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ topic: topic.trim() }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || '生成问题失败');
+      }
+      
+      const data = await response.json();
+      console.log('收到响应:', data);
+      
+      if (data.questions && Array.isArray(data.questions)) {
+        dispatch({ type: 'trivia/setQuestions', payload: data.questions });
+      } else {
+        throw new Error('返回的问题格式不正确');
+      }
+    } catch (error) {
+      console.error('生成问题出错:', error);
+      alert(error instanceof Error ? error.message : '生成问题失败');
+    }
   };
 
   const currentQuestion = questions[currentQuestionIndex];
@@ -105,140 +148,133 @@ const TriviaGame: React.FC = () => {
   if (questions.length === 0 || !currentQuestion) {
     return (
       <Container maxWidth="md" sx={{ mt: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h4" gutterBottom>
-            欢迎来到问答游戏
-          </Typography>
-          <Typography variant="body1" paragraph>
-            请选择文档类型并上传文件，然后开始游戏。
-          </Typography>
-          <Stack spacing={2}>
-            <FormControl fullWidth>
-              <InputLabel>文档类型</InputLabel>
-              <Select
-                value={documentType}
-                label="文档类型"
-                onChange={handleDocumentTypeChange}
-                disabled={isDocumentLoaded}
+        <Typography variant="h4" gutterBottom>知识问答游戏</Typography>
+        <Stack spacing={3}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>上传文档</Typography>
+              <Button
+                variant="contained"
+                component="label"
+                fullWidth
               >
-                <MenuItem value="pdf">PDF</MenuItem>
-                <MenuItem value="markdown">Markdown</MenuItem>
-              </Select>
-            </FormControl>
-            
-            <input
-              type="file"
-              accept={documentType === 'pdf' ? '.pdf' : '.md,.markdown'}
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-              ref={fileInputRef}
-              aria-label="选择文件"
-            />
-            
-            <Button
-              variant="outlined"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isDocumentLoaded}
-            >
-              {fileName || '选择文件'}
-            </Button>
-
-            {documentContent && (
+                选择文件
+                <input
+                  type="file"
+                  hidden
+                  onChange={handleFileSelect}
+                  accept=".pdf,.md"
+                />
+              </Button>
+              {fileName && (
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  已选择文件: {fileName}
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>直接生成问题</Typography>
               <TextField
                 fullWidth
-                multiline
-                rows={4}
-                label="文档内容预览"
-                value={documentContent}
-                disabled
+                label="输入主题"
+                placeholder="例如：人工智能、历史、科学等"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                sx={{ mb: 2 }}
               />
-            )}
-
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleStartGame}
-              disabled={!documentContent || isDocumentLoaded}
-            >
-              开始游戏
-            </Button>
-          </Stack>
-        </Paper>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleGenerateDirectly}
+                fullWidth
+              >
+                生成问题
+              </Button>
+            </CardContent>
+          </Card>
+        </Stack>
       </Container>
     );
   }
 
   return (
     <Container maxWidth="md" sx={{ mt: 4 }}>
-      <Paper elevation={3} sx={{ p: 4 }}>
-        <Typography variant="h4" gutterBottom>
-          问答游戏
-        </Typography>
-        <Typography variant="h6" gutterBottom>
-          得分: {score}
-        </Typography>
-        <Typography variant="h6" gutterBottom>
-          问题 {currentQuestionIndex + 1} / {questions.length}
-        </Typography>
-        <Typography variant="body1" paragraph>
-          {currentQuestion.question}
-        </Typography>
-        {currentQuestion.options.map((option, index) => (
-          <Button
-            key={index}
-            variant={selectedAnswer === option ? 'contained' : 'outlined'}
-            color={selectedAnswer === option ? 'primary' : 'inherit'}
-            onClick={() => setSelectedAnswer(option)}
-            fullWidth
-            sx={{ mb: 1 }}
-            disabled={showResult}
-          >
-            {option}
-          </Button>
-        ))}
-        {showResult ? (
-          <Box sx={{ mt: 2 }}>
-            <Alert
-              severity={currentQuestion.correct_answer === selectedAnswer ? 'success' : 'error'}
-            >
-              {currentQuestion.correct_answer === selectedAnswer
-                ? '回答正确！'
-                : `回答错误。正确答案是: ${currentQuestion.correct_answer}`}
-            </Alert>
-            <Typography variant="body2" sx={{ mt: 2 }}>
-              {currentQuestion.explanation}
-            </Typography>
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleNextQuestion}
-              sx={{ mt: 2 }}
-            >
-              {currentQuestionIndex < questions.length - 1 ? '下一题' : '结束游戏'}
-            </Button>
-            {currentQuestionIndex === questions.length - 1 && (
+      <Typography variant="h4" gutterBottom>知识问答游戏</Typography>
+      <Card>
+        <CardContent>
+          <Stack spacing={3}>
+            <Box>
+              <Typography variant="subtitle1">
+                问题 {currentQuestionIndex + 1} / {questions.length}
+              </Typography>
+              <Typography variant="h6" sx={{ mt: 1 }}>
+                {currentQuestion.question}
+              </Typography>
+            </Box>
+
+            <FormControl component="fieldset">
+              <RadioGroup
+                value={selectedAnswer}
+                onChange={(e) => handleAnswerSubmit(e.target.value)}
+              >
+                {currentQuestion.options.map((option) => (
+                  <FormControlLabel
+                    key={option}
+                    value={option}
+                    control={<Radio />}
+                    label={option}
+                    disabled={showExplanation}
+                  />
+                ))}
+              </RadioGroup>
+            </FormControl>
+
+            {showExplanation && (
+              <Box>
+                <Typography
+                  color={isCorrect ? 'success.main' : 'error.main'}
+                  sx={{ mb: 1 }}
+                >
+                  {isCorrect ? '回答正确！' : `回答错误。正确答案是: ${currentQuestion.correct_answer}`}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  解释：{currentQuestion.explanation}
+                </Typography>
+              </Box>
+            )}
+
+            <Stack direction="row" spacing={2}>
+              {showExplanation && (
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleNextQuestion}
+                >
+                  {currentQuestionIndex < questions.length - 1 ? '下一题' : '查看得分'}
+                </Button>
+              )}
               <Button
                 variant="outlined"
-                color="primary"
                 onClick={handleResetGame}
-                sx={{ mt: 2, ml: 2 }}
               >
                 重新开始
               </Button>
+            </Stack>
+
+            {currentQuestionIndex === questions.length - 1 && showExplanation && (
+              <Box>
+                <Typography variant="h5" gutterBottom>游戏结束！</Typography>
+                <Typography>
+                  你的得分：{score} / {questions.length}
+                </Typography>
+              </Box>
             )}
-          </Box>
-        ) : (
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleAnswerSubmit}
-            disabled={!selectedAnswer}
-            sx={{ mt: 2 }}
-          >
-            提交答案
-          </Button>
-        )}
-      </Paper>
+          </Stack>
+        </CardContent>
+      </Card>
     </Container>
   );
 };

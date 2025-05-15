@@ -1,12 +1,13 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from rag_service import RAGService
 from document_service import DocumentService
 import uvicorn
 import os
 from tempfile import NamedTemporaryFile
+import tempfile
 
 app = FastAPI()
 
@@ -24,8 +25,7 @@ rag_service = RAGService()
 document_service = DocumentService()
 
 class GenerateRequest(BaseModel):
-    document_type: str
-    document_content: str
+    topic: str
 
 class Question(BaseModel):
     question: str
@@ -95,6 +95,42 @@ async def generate_questions(request: GenerateRequest):
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
+
+@app.post("/upload")
+async def upload_file_new(file: UploadFile = File(...)):
+    try:
+        # 创建临时文件
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
+
+        # 获取文档内容
+        content = document_service.get_document_content(temp_path)
+        
+        # 生成问题
+        questions = rag_service.generate_questions(file.filename, content)
+        
+        # 删除临时文件
+        os.unlink(temp_path)
+        
+        return {"questions": questions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate-directly")
+async def generate_questions_directly(request: GenerateRequest):
+    try:
+        print(f"收到生成问题请求，主题: {request.topic}")
+        if not request.topic or not request.topic.strip():
+            raise HTTPException(status_code=400, detail="主题不能为空")
+            
+        questions = rag_service.generate_questions_directly(request.topic)
+        print(f"成功生成 {len(questions)} 个问题")
+        return {"questions": questions}
+    except Exception as e:
+        print(f"生成问题时出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"生成问题失败: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=5001, reload=True) 
