@@ -25,8 +25,22 @@
 - LangChain
 - Ollama
 - ChromaDB
+- python-magic (用于文件类型检测)
 
 ## 安装说明
+
+### 系统要求
+
+- Python 3.8+
+- Node.js 14+
+- Ollama
+- libmagic (用于文件类型检测)
+
+### macOS 系统依赖安装
+
+```bash
+brew install libmagic
+```
 
 ### 后端设置
 
@@ -85,6 +99,8 @@ npm start
 - 确保 Ollama 服务正在运行
 - 后端服务需要 Python 3.8 或更高版本
 - 前端需要 Node.js 14 或更高版本
+- macOS 用户需要安装 libmagic
+- Windows 用户需要安装 python-magic-bin
 
 ## 许可证
 
