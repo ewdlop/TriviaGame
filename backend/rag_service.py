@@ -8,62 +8,111 @@ import json
 from typing import List, Dict
 import re
 import os
+import subprocess
+import time
+import platform
 
 class RAGService:
     def __init__(self):
-        # 使用Ollama的embeddings
-        self.embeddings = OllamaEmbeddings(model="llama2")
-        # 使用Ollama的LLM
-        self.llm = ChatOllama(model="llama2", temperature=0.7)
-        
-        # 初始化文本分割器
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200
-        )
-        
-        # 初始化向量存储
-        self.vector_store = None
-        
-        # 尝试从chroma_db目录加载现有的向量存储
         try:
-            if os.path.exists("chroma_db"):
-                print("正在从chroma_db目录加载向量存储...")
-                self.vector_store = Chroma(
-                    collection_name="document_chunks",
-                    embedding_function=self.embeddings,
-                    persist_directory="chroma_db"
-                )
-                print("成功加载现有的向量存储")
-            else:
-                print("未找到chroma_db目录")
-        except Exception as e:
-            print(f"加载向量存储时出错: {str(e)}")
-            print("将创建新的向量存储")
-        
-        # 初始化提示模板
-        self.question_template = ChatPromptTemplate.from_messages([
-            ("system", """你是一个专业的问答游戏出题者。基于给定的文档内容，生成5个有趣且具有教育意义的问答题目。
-            请确保：
-            1. 问题必须基于提供的文档内容
-            2. 问题要考察文档中的重要概念和细节
-            3. 选项合理且具有迷惑性
-            4. 解释要详细说明为什么这个答案是正确的
-            5. 选项必须使用"选项A"、"选项B"、"选项C"、"选项D"的格式
-            6. 正确答案必须是选项之一（"选项A"、"选项B"、"选项C"或"选项D"）
-            7. 必须生成5个问题
+            print("正在初始化 RAGService...")
             
-            请严格按照以下JSON格式返回，不要添加任何其他内容：
-            [
-                {
-                    "question": "问题文本",
-                    "options": ["选项A", "选项B", "选项C", "选项D"],
-                    "correct_answer": "选项A",
-                    "explanation": "详细解释"
-                }
-            ]"""),
-            ("user", "文档内容：{context}")
-        ])
+            # 检查 Ollama 服务是否运行
+            system = platform.system()
+            if system in ["Darwin", "Linux"]:  # 只在 Mac 或 Linux 上执行
+                print("检查 Ollama 服务状态...")
+                try:
+                    result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+                    
+                    if 'ollama' not in result.stdout:
+                        print("Ollama 服务未运行，尝试启动...")
+                        subprocess.Popen(['ollama', 'serve'])
+                        # 等待服务启动
+                        time.sleep(5)
+                        print("Ollama 服务已启动")
+                    else:
+                        print("Ollama 服务正在运行")
+                except Exception as e:
+                    print(f"检查 Ollama 服务时出错: {str(e)}")
+                    raise Exception("无法检查或启动 Ollama 服务")
+            else:
+                print(f"当前操作系统 {system} 不支持自动检查 Ollama 服务")
+            
+            # 使用Ollama的embeddings
+            print("正在初始化 Ollama embeddings...")
+            try:
+                self.embeddings = OllamaEmbeddings(model="llama2")
+                print("Ollama embeddings 初始化成功")
+            except Exception as e:
+                print(f"初始化 embeddings 失败: {str(e)}")
+                raise Exception(f"无法初始化 embeddings: {str(e)}")
+            
+            # 使用Ollama的LLM
+            print("正在初始化 Ollama LLM...")
+            try:
+                self.llm = ChatOllama(model="llama2", temperature=0.7)
+                # 测试连接
+                test_response = self.llm.invoke("测试连接")
+                if not test_response:
+                    raise Exception("LLM 测试响应为空")
+                print("Ollama LLM 初始化成功")
+            except Exception as e:
+                print(f"初始化 LLM 失败: {str(e)}")
+                raise Exception(f"无法初始化 LLM: {str(e)}")
+            
+            # 初始化文本分割器
+            self.text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200
+            )
+            
+            # 初始化向量存储
+            self.vector_store = None
+            
+            # 尝试从chroma_db目录加载现有的向量存储
+            try:
+                if os.path.exists("chroma_db"):
+                    print("正在从chroma_db目录加载向量存储...")
+                    self.vector_store = Chroma(
+                        collection_name="document_chunks",
+                        embedding_function=self.embeddings,
+                        persist_directory="chroma_db"
+                    )
+                    print("成功加载现有的向量存储")
+                else:
+                    print("未找到chroma_db目录")
+            except Exception as e:
+                print(f"加载向量存储时出错: {str(e)}")
+                print("将创建新的向量存储")
+            
+            # 初始化提示模板
+            self.question_template = ChatPromptTemplate.from_messages([
+                ("system", """你是一个专业的问答游戏出题者。基于给定的文档内容，生成5个有趣且具有教育意义的问答题目。
+                请确保：
+                1. 问题必须基于提供的文档内容
+                2. 问题要考察文档中的重要概念和细节
+                3. 选项合理且具有迷惑性
+                4. 解释要详细说明为什么这个答案是正确的
+                5. 选项必须使用"选项A"、"选项B"、"选项C"、"选项D"的格式
+                6. 正确答案必须是选项之一（"选项A"、"选项B"、"选项C"或"选项D"）
+                7. 必须生成5个问题
+                
+                请严格按照以下JSON格式返回，不要添加任何其他内容：
+                [
+                    {
+                        "question": "问题文本",
+                        "options": ["选项A", "选项B", "选项C", "选项D"],
+                        "correct_answer": "选项A",
+                        "explanation": "详细解释"
+                    }
+                ]"""),
+                ("user", "文档内容：{context}")
+            ])
+
+            print("RAGService 初始化完成")
+        except Exception as e:
+            print(f"RAGService 初始化失败: {str(e)}")
+            raise
 
     def _extract_json_from_response(self, response: str) -> str:
         """从响应中提取JSON字符串"""
@@ -270,24 +319,49 @@ class RAGService:
                         "correct_answer": "选项A",
                         "explanation": "解释1"
                     }
-                ]"""),
+                ]
+
+                注意：
+                1. 不要添加任何额外的文本或说明
+                2. 直接返回JSON数组
+                3. 确保JSON格式正确
+                4. 每个问题必须有4个选项
+                5. 正确答案必须是选项之一"""),
                 ("user", f"主题：{topic}")
             ])
             
             # 生成问题
             print("正在调用语言模型生成问题...")
-            response = self.llm.invoke(direct_template.format_messages())
-            print(f"语言模型响应: {response.content}")
-            
-            # 提取并解析JSON
-            json_str = self._extract_json_from_response(response.content)
-            print(f"提取的JSON字符串: {json_str}")
-            
             try:
-                questions = json.loads(json_str)
-            except json.JSONDecodeError as e:
-                print(f"JSON解析错误: {str(e)}")
-                raise ValueError(f"无法解析生成的问题: {str(e)}")
+                messages = direct_template.format_messages()
+                print(f"格式化后的消息: {messages}")
+                response = self.llm.invoke(messages)
+                print(f"语言模型响应: {response.content}")
+                
+                # 清理响应内容
+                content = response.content.strip()
+                # 移除可能的markdown代码块标记
+                content = content.replace('```json', '').replace('```', '').strip()
+                print(f"清理后的响应: {content}")
+                
+                # 尝试解析JSON
+                try:
+                    questions = json.loads(content)
+                except json.JSONDecodeError as e:
+                    print(f"JSON解析错误: {str(e)}")
+                    # 尝试提取JSON部分
+                    start_idx = content.find('[')
+                    end_idx = content.rfind(']')
+                    if start_idx != -1 and end_idx != -1:
+                        json_str = content[start_idx:end_idx + 1]
+                        print(f"尝试提取的JSON: {json_str}")
+                        questions = json.loads(json_str)
+                    else:
+                        raise ValueError("无法从响应中提取有效的JSON")
+            
+            except Exception as e:
+                print(f"调用语言模型时出错: {str(e)}")
+                raise Exception(f"无法连接到语言模型: {str(e)}")
             
             # 验证问题格式
             if not isinstance(questions, list):
