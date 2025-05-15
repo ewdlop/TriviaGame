@@ -1,7 +1,6 @@
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OllamaEmbeddings
-from langchain.vectorstores import Chroma
+from langchain_community.embeddings import OllamaEmbeddings
 import os
 from typing import List, Optional, Dict
 import magic
@@ -17,14 +16,10 @@ class DocumentService:
             chunk_overlap=200,
             length_function=len,
         )
-        self.vectorstore = Chroma(
-            persist_directory="./data",
-            embedding_function=self.embeddings
-        )
         
         # 初始化 ChromaDB 客户端
         self.client = chromadb.Client(Settings(
-            persist_directory="documents",
+            persist_directory="./data",
             anonymized_telemetry=False
         ))
         
@@ -75,13 +70,20 @@ class DocumentService:
         splits = self.text_splitter.split_documents(documents)
         
         # 存储到向量数据库
-        self.vectorstore.add_documents(splits)
-        self.vectorstore.persist()
+        for i, split in enumerate(splits):
+            self.collection.add(
+                documents=[split.page_content],
+                metadatas=[{"source": file_path}],
+                ids=[f"{file_path}_{i}"]
+            )
 
     def search_documents(self, query: str, k: int = 3) -> List[str]:
         """搜索相关文档片段"""
-        docs = self.vectorstore.similarity_search(query, k=k)
-        return [doc.page_content for doc in docs]
+        results = self.collection.query(
+            query_texts=[query],
+            n_results=k
+        )
+        return results['documents'][0] if results['documents'] else []
 
     def process_document_with_cache(self, content: str, doc_type: str) -> str:
         """处理文档并返回文档ID"""

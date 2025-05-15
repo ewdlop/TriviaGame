@@ -2,8 +2,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-from app.rag_service import RAGService
-from app.document_service import DocumentService
+from rag_service import RAGService
+from document_service import DocumentService
 import uvicorn
 
 app = FastAPI()
