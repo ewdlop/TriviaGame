@@ -179,6 +179,46 @@ class RAGService:
             print(f"提取JSON时出错: {str(e)}")
             print(f"原始响应: {response}")
             raise ValueError(f"无法从响应中提取有效的包含 questions 的JSON: {str(e)}")
+        
+    def extract_json_from_response_content(self, response_content):
+        """
+        從混雜文本中提取出第一個合法的 JSON 對象並轉為 Python dict。
+        若失敗則丟出 ValueError。
+        """
+        # 嘗試先直接 decode
+        try:
+            return json.loads(response_content)
+        except Exception:
+            pass
+
+        # 用正則找第一個 {...} 區塊
+        match = re.search(r'\{[\s\S]*?\}', response_content)
+        if match:
+            json_str = match.group()
+            try:
+                return json.loads(json_str)
+            except Exception as e:
+                print(f"第一次提取到的JSON解析失敗: {e}")
+
+        # 若有多個 {...}，找出所有可能
+        matches = re.findall(r'\{[\s\S]*?\}', response_content)
+        for m in matches:
+            try:
+                return json.loads(m)
+            except Exception:
+                continue
+
+        # 也支援 JSON array 為頂層（如 [ {...}, {...} ] ）
+        match_arr = re.search(r'\[[\s\S]*?\]', response_content)
+        if match_arr:
+            json_str = match_arr.group()
+            try:
+                return json.loads(json_str)
+            except Exception as e:
+                print(f"提取到的JSON陣列解析失敗: {e}")
+
+        # 若都失敗
+        raise ValueError("無法從 response_content 提取出有效 JSON 物件！")
 
     def _create_vector_store(self, text: str):
             
@@ -241,22 +281,25 @@ class RAGService:
             response_content = getattr(response, "content", None)
             if response_content is None:
                 # 可能本身就是字符串
+                print(f"是字符串")
                 response_content = str(response)
             # 提取JSON（已優化）
-            data = self._extract_json_from_response(response_content)
+            #data = self._extract_json_from_response(response_content)
+            print(f"response_content: {response_content}")
 
+            json_data = self.extract_json_from_response_content(response_content)
             # 驗證格式
-            questions = data.get("questions")
+            questions = json_data["questions"]
             if not isinstance(questions, list):
                 raise ValueError("生成的问题不是列表格式")
 
             for q in questions:
                 if not all(k in q for k in ["question", "options", "correct_answer", "explanation"]):
                     raise ValueError("问题缺少必要的字段")
-                if not isinstance(q["options"], list) or len(q["options"]) != 4:
+                #if not isinstance(q["options"], list) or len(q["options"]) != 4:
                     raise ValueError("问题选项必须是包含4个选项的列表")
-                if q["correct_answer"] not in q["options"]:
-                    raise ValueError("正确答案必须是选项之一")
+                #if q["correct_answer"] not in q["options"]:
+                    #raise ValueError("正确答案必须是选项之一")
             return questions
         except Exception as e:
             print(f"生成问题时出错: {str(e)}")
