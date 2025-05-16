@@ -20,9 +20,12 @@ import {
   FormControlLabel,
   Card,
   CardContent,
+  CardActions,
+  FormLabel,
+  Snackbar
 } from '@mui/material';
 import { AppDispatch, RootState } from '../store/store';
-import { fetchQuestions, submitAnswer, uploadFile, nextQuestion, resetGame } from '../store/triviaSlice';
+import { fetchQuestions, submitAnswer, uploadFile, nextQuestion, resetGame, generateQuestionsDirectly } from '../store/triviaSlice';
 
 const TriviaGame: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -38,6 +41,9 @@ const TriviaGame: React.FC = () => {
   const [isCorrect, setIsCorrect] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
 
   const handleDocumentTypeChange = (event: SelectChangeEvent) => {
     if (!isDocumentLoaded) {
@@ -49,7 +55,7 @@ const TriviaGame: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       setFileName(file.name);
-      dispatch(uploadFile(file));
+      setFile(file);
       setIsDocumentLoaded(true);
     }
   };
@@ -86,37 +92,33 @@ const TriviaGame: React.FC = () => {
   };
 
   const handleGenerateDirectly = async () => {
-    if (!topic.trim()) {
-      alert('请输入主题');
-      return;
-    }
-    try {
-      console.log('正在发送生成问题请求...');
-      const response = await fetch('http://localhost:5001/generate-directly', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ topic: topic.trim() }),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || '生成问题失败');
+    if (topic.trim()) {
+      try {
+        await dispatch(generateQuestionsDirectly(topic.trim())).unwrap();
+        setSnackbarMessage('问题生成成功');
+        setSnackbarOpen(true);
+      } catch (error) {
+        setSnackbarMessage(error instanceof Error ? error.message : '生成失败');
+        setSnackbarOpen(true);
       }
-      
-      const data = await response.json();
-      console.log('收到响应:', data);
-      
-      if (data.questions && Array.isArray(data.questions)) {
-        dispatch({ type: 'trivia/setQuestions', payload: data.questions });
-      } else {
-        throw new Error('返回的问题格式不正确');
-      }
-    } catch (error) {
-      console.error('生成问题出错:', error);
-      alert(error instanceof Error ? error.message : '生成问题失败');
     }
+  };
+
+  const handleUpload = async () => {
+    if (file) {
+      try {
+        await dispatch(uploadFile(file)).unwrap();
+        setSnackbarMessage('文件上传成功');
+        setSnackbarOpen(true);
+      } catch (error) {
+        setSnackbarMessage(error instanceof Error ? error.message : '上传失败');
+        setSnackbarOpen(true);
+      }
+    }
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
   };
 
   const currentQuestion = questions[currentQuestionIndex];
@@ -275,6 +277,13 @@ const TriviaGame: React.FC = () => {
           </Stack>
         </CardContent>
       </Card>
+
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={3000}
+        onClose={handleSnackbarClose}
+        message={snackbarMessage}
+      />
     </Container>
   );
 };

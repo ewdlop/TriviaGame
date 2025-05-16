@@ -85,8 +85,8 @@ class RAGService:
                 print(f"加载向量存储时出错: {str(e)}")
                 print("将创建新的向量存储")
             
-            # 初始化提示模板
-            self.question_template = ChatPromptTemplate.from_messages([
+            # 初始化文档问题生成模板
+            self.document_question_template = ChatPromptTemplate.from_messages([
                 ("system", """你是一个专业的问答游戏出题者。基于给定的文档内容，生成5个有趣且具有教育意义的问答题目。
                 请确保：
                 1. 问题必须基于提供的文档内容
@@ -107,6 +107,30 @@ class RAGService:
                     }
                 ]"""),
                 ("user", "文档内容：{context}")
+            ])
+
+            # 初始化直接主题问题生成模板
+            self.topic_question_template = ChatPromptTemplate.from_messages([
+                ("system", """你是一个专业的问答游戏出题者。请基于给定的主题生成5个有趣且具有教育意义的问答题目。
+                请确保：
+                1. 问题必须与主题相关
+                2. 问题要考察主题中的重要概念和细节
+                3. 选项合理且具有迷惑性
+                4. 解释要详细说明为什么这个答案是正确的
+                5. 选项必须使用"选项A"、"选项B"、"选项C"、"选项D"的格式
+                6. 正确答案必须是选项之一（"选项A"、"选项B"、"选项C"或"选项D"）
+                7. 必须生成5个问题
+                
+                请严格按照以下JSON格式返回，不要添加任何其他内容：
+                [
+                    {
+                        "question": "问题文本",
+                        "options": ["选项A", "选项B", "选项C", "选项D"],
+                        "correct_answer": "选项A",
+                        "explanation": "详细解释"
+                    }
+                ]"""),
+                ("user", "主题：{context}")
             ])
 
             print("RAGService 初始化完成")
@@ -185,8 +209,38 @@ class RAGService:
         # 合并文本块
         return "\n".join(doc.page_content for doc in docs)
 
+    def _generate_questions_from_context(self, context: str, is_document: bool = True) -> List[Dict]:
+        """从上下文生成问题的通用方法"""
+        try:
+            print("Generating questions...")
+            # 根据类型选择模板
+            template = self.document_question_template if is_document else self.topic_question_template
+            
+            # 使用提示模板生成问题
+            chain = template | self.llm
+            response = chain.invoke({"context": context})
+            
+            # 提取并解析JSON
+            json_str = self._extract_json_from_response(response.content)
+            questions = json.loads(json_str)
+            
+            # 验证问题格式
+            for q in questions:
+                if not all(k in q for k in ["question", "options", "correct_answer", "explanation"]):
+                    raise ValueError("问题格式不正确")
+                if not isinstance(q["options"], list) or len(q["options"]) != 4:
+                    raise ValueError("选项必须是包含4个选项的列表")
+                if q["correct_answer"] not in q["options"]:
+                    raise ValueError("正确答案必须是选项之一")
+            
+            print(f"成功生成 {len(questions)} 个问题")
+            return questions
+        except Exception as e:
+            print(f"生成问题时出错: {str(e)}")
+            return [self._get_default_question() for _ in range(5)]
+
     def generate_questions(self, doc_id: str, context: str, use_existing_store: bool = False) -> List[Dict]:
-        """生成问题"""
+        """从文档生成问题"""
         try:
             if use_existing_store:
                 if not self.vector_store:
@@ -197,92 +251,24 @@ class RAGService:
                 print("Creating vector store...")
                 self._create_vector_store(context)
             
-            print("Generating questions...")
-            # 获取所有相关文档块
-            all_chunks = []
-            for i in range(5):  # 生成5个问题
-                # 使用不同的查询来获取不同的文档块
-                query = f"重要概念 {i+1}"
-                chunks = self._get_relevant_chunks(query, k=2)
-                if chunks:
-                    all_chunks.append(chunks)
-            
-            if not all_chunks:
-                print("Warning: No relevant chunks found")
-                return [self._get_default_question() for _ in range(5)]
-            
-            # 为每个文档块生成一个问题
-            valid_questions = []
-            for i, chunks in enumerate(all_chunks):
-                print(f"正在为第 {i+1} 个文档块生成问题...")
-                print(f"文档块内容: {chunks[:200]}...")  # 只打印前200个字符
-                
-                print("开始生成问题...")
-                # 生成问题
-                response = self.llm.invoke(
-                    self.question_template.format_messages(
-                        context=chunks
-                    )
-                )
-                
-                try:
-                    print("提取并解析JSON...")
-                    # 提取并解析JSON
-                    json_str = self._extract_json_from_response(response.content)
-                    questions = json.loads(json_str)
-                    
-                    if not isinstance(questions, list) or len(questions) == 0:
-                        print(f"Warning: Invalid response format for chunk {i+1}")
-                        continue
-                    
-                    # 验证问题
-                    q = questions[0]  # 只取第一个问题
-                    
-                    # 检查必要字段
-                    if not all(k in q for k in ["question", "options", "correct_answer", "explanation"]):
-                        print(f"Warning: Question missing required fields: {q}")
-                        continue
-                        
-                    # 检查选项格式
-                    if not isinstance(q["options"], list) or len(q["options"]) != 4:
-                        print(f"Warning: Invalid options format: {q['options']}")
-                        continue
-                        
-                    # 检查答案格式
-                    if not q["correct_answer"].startswith("选项"):
-                        print(f"Warning: Invalid answer format: {q['correct_answer']}")
-                        continue
-                        
-                    # 确保答案是选项之一
-                    if q["correct_answer"] not in q["options"]:
-                        print(f"Warning: Answer not in options: {q['correct_answer']}")
-                        continue
-                    
-                    # 验证问题是否基于当前文档块
-                    question_chunks = self._get_relevant_chunks(q["question"])
-                    if not question_chunks or not any(chunk in question_chunks for chunk in chunks.split("\n")):
-                        print(f"Warning: Question may not be based on current chunk: {q['question']}")
-                        continue
-                        
-                    valid_questions.append(q)
-                    print(f"成功生成第 {i+1} 个问题")
-                    
-                except Exception as e:
-                    print(f"Error processing chunk {i+1}: {str(e)}")
-                    continue
-            
-            if len(valid_questions) >= 5:
-                print(f"Successfully generated {len(valid_questions)} valid questions")
-                return valid_questions[:5]
-            else:
-                print(f"Only generated {len(valid_questions)} valid questions")
-                # 如果问题不足，添加默认问题
-                while len(valid_questions) < 5:
-                    valid_questions.append(self._get_default_question())
-                return valid_questions
+            return self._generate_questions_from_context(context, is_document=True)
             
         except Exception as e:
-            print(f"Unexpected error: {str(e)}")
+            print(f"生成问题时出错: {str(e)}")
+            return [self._get_default_question() for _ in range(5)]
+
+    def generate_questions_directly(self, topic: str) -> List[Dict]:
+        """直接从主题生成问题"""
+        try:
+            print(f"收到生成问题请求，主题: {topic}")
+            if not topic or not topic.strip():
+                raise ValueError("主题不能为空")
+            
+            # 使用主题作为上下文直接生成问题
+            return self._generate_questions_from_context(topic, is_document=False)
+            
+        except Exception as e:
+            print(f"生成问题时出错: {str(e)}")
             return [self._get_default_question() for _ in range(5)]
     
     def _get_default_question(self) -> Dict:
@@ -292,122 +278,4 @@ class RAGService:
             "options": ["选项A", "选项B", "选项C", "选项D"],
             "correct_answer": "选项A",
             "explanation": "这是一个示例解释"
-        }
-
-    def generate_questions_directly(self, topic: str) -> List[Dict]:
-        """直接基于主题生成问题，不需要上传文件"""
-        try:
-            print(f"正在为主题 '{topic}' 生成问题...")
-            
-            # 创建提示模板
-            direct_template = ChatPromptTemplate.from_messages([
-                ("system", """你是一个专业的问答游戏出题者。请基于给定的主题生成5个问答题目。
-                每个问题必须包含：
-                1. 问题文本
-                2. 4个选项（使用"选项A"、"选项B"、"选项C"、"选项D"的格式）
-                3. 正确答案（必须是选项之一）
-                4. 解释说明
-
-                请直接返回JSON格式的问题列表，格式如下：
-                [
-                    {
-                        "question": "问题1",
-                        "options": ["选项A", "选项B", "选项C", "选项D"],
-                        "correct_answer": "选项A",
-                        "explanation": "解释1"
-                    }
-                ]
-
-                注意：
-                1. 不要添加任何额外的文本或说明
-                2. 直接返回JSON数组
-                3. 确保JSON格式正确
-                4. 每个问题必须有4个选项
-                5. 正确答案必须是选项之一"""),
-                ("user", f"主题：{topic}")
-            ])
-            
-            # 生成问题
-            print("正在调用语言模型生成问题...")
-            try:
-                messages = direct_template.format_messages()
-                print(f"格式化后的消息: {messages}")
-                response = self.llm.invoke(messages)
-                print(f"语言模型响应: {response.content}")
-                
-                # 清理响应内容
-                content = response.content.strip()
-                # 移除可能的markdown代码块标记
-                content = content.replace('```json', '').replace('```', '').strip()
-                print(f"清理后的响应: {content}")
-                
-                # 尝试解析JSON
-                try:
-                    questions = json.loads(content)
-                except json.JSONDecodeError as e:
-                    print(f"JSON解析错误: {str(e)}")
-                    # 尝试提取JSON部分
-                    start_idx = content.find('[')
-                    end_idx = content.rfind(']')
-                    if start_idx != -1 and end_idx != -1:
-                        json_str = content[start_idx:end_idx + 1]
-                        print(f"尝试提取的JSON: {json_str}")
-                        questions = json.loads(json_str)
-                    else:
-                        raise ValueError("无法从响应中提取有效的JSON")
-            
-            except Exception as e:
-                print(f"调用语言模型时出错: {str(e)}")
-                raise Exception(f"无法连接到语言模型: {str(e)}")
-            
-            # 验证问题格式
-            if not isinstance(questions, list):
-                print(f"响应不是列表格式: {type(questions)}")
-                raise ValueError("生成的问题格式不正确")
-            
-            if len(questions) < 5:
-                print(f"警告：只生成了 {len(questions)} 个问题，需要5个")
-                # 如果问题数量不足，添加默认问题
-                while len(questions) < 5:
-                    questions.append(self._get_default_question())
-            
-            # 验证每个问题
-            valid_questions = []
-            for i, q in enumerate(questions):
-                print(f"验证第 {i+1} 个问题...")
-                # 检查必要字段
-                if not all(k in q for k in ["question", "options", "correct_answer", "explanation"]):
-                    print(f"问题缺少必要字段: {q}")
-                    continue
-                    
-                # 检查选项格式
-                if not isinstance(q["options"], list) or len(q["options"]) != 4:
-                    print(f"选项格式无效: {q['options']}")
-                    continue
-                    
-                # 检查答案格式
-                if not q["correct_answer"].startswith("选项"):
-                    print(f"答案格式无效: {q['correct_answer']}")
-                    continue
-                    
-                # 确保答案是选项之一
-                if q["correct_answer"] not in q["options"]:
-                    print(f"答案不在选项中: {q['correct_answer']}")
-                    continue
-                
-                valid_questions.append(q)
-                print(f"第 {i+1} 个问题验证通过")
-            
-            if len(valid_questions) >= 5:
-                print(f"成功生成 {len(valid_questions)} 个有效问题")
-                return valid_questions[:5]
-            else:
-                print(f"只生成了 {len(valid_questions)} 个有效问题")
-                # 如果问题不足，添加默认问题
-                while len(valid_questions) < 5:
-                    valid_questions.append(self._get_default_question())
-                return valid_questions
-            
-        except Exception as e:
-            print(f"生成问题时出错: {str(e)}")
-            raise Exception(f"生成问题失败: {str(e)}") 
+        } 

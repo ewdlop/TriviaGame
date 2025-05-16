@@ -91,12 +91,39 @@ export const fetchQuestions = createAsyncThunk(
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ document_type: documentType, content }),
+      body: JSON.stringify({
+        document_content: content,
+        document_type: documentType
+      }),
     });
 
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || '获取问题失败');
+    }
+
+    const data = await response.json();
+    if (!data.questions || !Array.isArray(data.questions)) {
+      throw new Error('服务器返回的数据格式错误');
+    }
+    return validateQuestions(data.questions);
+  }
+);
+
+export const generateQuestionsDirectly = createAsyncThunk(
+  'trivia/generateQuestionsDirectly',
+  async (topic: string) => {
+    const response = await fetch('http://localhost:5001/generate-directly', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ topic }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || '生成问题失败');
     }
 
     const data = await response.json();
@@ -164,6 +191,23 @@ const triviaSlice = createSlice({
       .addCase(uploadFile.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || '上传文件失败';
+      })
+      .addCase(generateQuestionsDirectly.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(generateQuestionsDirectly.fulfilled, (state, action) => {
+        state.loading = false;
+        state.questions = action.payload.map(q => ({
+          ...q,
+          correct_answer: q.correct_answer.trim()
+        }));
+        state.currentQuestionIndex = 0;
+        state.score = 0;
+      })
+      .addCase(generateQuestionsDirectly.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || '生成问题失败';
       });
   },
 });

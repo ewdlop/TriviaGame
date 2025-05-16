@@ -13,7 +13,7 @@ app = FastAPI()
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000","http://127.0.0.1:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -23,7 +23,11 @@ app.add_middleware(
 rag_service = RAGService()
 document_service = DocumentService()
 
-class GenerateRequest(BaseModel):
+class DocumentGenerateRequest(BaseModel):
+    document_content: str
+    document_type: str
+
+class TopicGenerateRequest(BaseModel):
     topic: str
 
 class Question(BaseModel):
@@ -73,7 +77,7 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/generate")
-async def generate_questions(request: GenerateRequest):
+async def generate_questions(request: DocumentGenerateRequest):
     try:
         # 处理文档并获取文档ID
         doc_id = document_service.process_document_with_cache(
@@ -96,7 +100,7 @@ async def health_check():
     return {"status": "healthy"}
 
 @app.post("/generate-directly")
-async def generate_questions_directly(request: GenerateRequest):
+async def generate_questions_directly(request: TopicGenerateRequest):
     try:
         print(f"收到生成问题请求，主题: {request.topic}")
         if not request.topic or not request.topic.strip():
