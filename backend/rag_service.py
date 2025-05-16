@@ -96,18 +96,9 @@ class RAGService:
                 5. 选项必须使用"选项A"、"选项B"、"选项C"、"选项D"的格式
                 6. 正确答案必须是选项之一（"选项A"、"选项B"、"选项C"或"选项D"）
                 7. 必须生成5个问题
-                
-                请严格按照以下JSON格式返回，不要添加任何其他内容：
-                {
-                    "questions": [
-                        {
-                            "question": "问题文本",
-                            "options": ["选项A", "选项B", "选项C", "选项D"],
-                            "correct_answer": "选项A",
-                            "explanation": "详细解释"
-                        }
-                    ]
-                }"""),
+
+                请直接返回JSON格式的问题列表，格式如下：
+                {"questions":[{"question":"问题1","options":["选项A","选项B","选项C","选项D"],"correct_answer":"选项A","explanation":"解释1"},{"question":"问题2","options":["选项A","选项B","选项C","选项D"],"correct_answer":"选项B","explanation":"解释2"}]}"""),
                 ("user", "主题：{context}")
             ])
 
@@ -122,18 +113,9 @@ class RAGService:
                 5. 选项必须使用"选项A"、"选项B"、"选项C"、"选项D"的格式
                 6. 正确答案必须是选项之一（"选项A"、"选项B"、"选项C"或"选项D"）
                 7. 必须生成5个问题
-                
-                请严格按照以下JSON格式返回，不要添加任何其他内容：
-                {
-                    "questions": [
-                        {
-                            "question": "问题文本",
-                            "options": ["选项A", "选项B", "选项C", "选项D"],
-                            "correct_answer": "选项A",
-                            "explanation": "详细解释"
-                        }
-                    ]
-                }"""),
+
+                请直接返回JSON格式的问题列表，格式如下：
+                {"questions":[{"question":"问题1","options":["选项A","选项B","选项C","选项D"],"correct_answer":"选项A","explanation":"解释1"},{"question":"问题2","options":["选项A","选项B","选项C","选项D"],"correct_answer":"选项B","explanation":"解释2"}]}"""),
                 ("user", "文档内容：{context}")
             ])
 
@@ -142,30 +124,41 @@ class RAGService:
             print(f"RAGService 初始化失败: {str(e)}")
             raise
 
-    def _extract_json_from_response(self, response: str) -> str:
-        """从响应中提取JSON字符串"""
+    def _extract_json_from_response(self, response: str) -> dict:
+        """从响应中提取JSON对象"""
+        # 嘗試正則提取所有 {} 區塊，找出包含 "questions" 的 json
+        print(f"LLM原始回應：{response}")
         try:
-            # 尝试找到JSON对象的开始和结束
-            start_idx = response.find('{')
-            end_idx = response.rfind('}')
-            
-            if start_idx == -1 or end_idx == -1:
-                # 如果没有找到JSON对象，尝试找JSON数组
-                start_idx = response.find('[')
-                end_idx = response.rfind(']')
-            
-            if start_idx == -1 or end_idx == -1:
-                print(f"无法在响应中找到JSON: {response}")
-                raise ValueError("响应中不包含有效的JSON")
-            
-            json_str = response[start_idx:end_idx + 1]
-            # 验证提取的字符串是否是有效的JSON
-            json.loads(json_str)
-            return json_str
+            # 若已經是字典
+            if isinstance(response, dict):
+                return response
+            # 如果是 list 格式
+            if isinstance(response, list):
+                for item in response:
+                    if isinstance(item, dict) and 'questions' in item:
+                        return item
+            # 嘗試解析多個 JSON 區塊
+            matches = re.findall(r'\{.*?\}', response, re.DOTALL)
+            for m in matches:
+                try:
+                    data = json.loads(m)
+                    if isinstance(data, dict) and "questions" in data:
+                        return data
+                except Exception:
+                    continue
+            # 或直接解析全部
+            data = json.loads(response)
+            if isinstance(data, dict) and "questions" in data:
+                return data
+            elif isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "questions" in item:
+                        return item
+            raise ValueError("未找到包含 'questions' 的有效 JSON 區塊")
         except Exception as e:
             print(f"提取JSON时出错: {str(e)}")
             print(f"原始响应: {response}")
-            raise ValueError(f"无法从响应中提取有效的JSON: {str(e)}")
+            raise ValueError(f"无法从响应中提取有效的包含 questions 的JSON: {str(e)}")
 
     def _create_vector_store(self, text: str):
             
@@ -218,23 +211,26 @@ class RAGService:
         try:
             # 选择适当的模板
             template = self.document_question_template if is_document else self.topic_question_template
-            
-            # 调用LLM生成问题
+
+            # 調用 LLM 生成問題（注意回傳可能是 message、list 或 object）
             response = self.llm.invoke(template.format_messages(context=context))
-            
-            # 提取JSON
-            json_str = self._extract_json_from_response(response.content)
-            data = json.loads(json_str)
-            
-            # 验证问题格式
-            if not isinstance(data, dict) or "questions" not in data:
-                raise ValueError("生成的问题格式不正确")
-            
-            questions = data["questions"]
+
+            # 打印 LLM response（debug）
+            print(f"LLM invoke 原始返回：{response}")
+
+            # 嘗試獲取內容
+            response_content = getattr(response, "content", None)
+            if response_content is None:
+                # 可能本身就是字符串
+                response_content = str(response)
+            # 提取JSON（已優化）
+            data = self._extract_json_from_response(response_content)
+
+            # 驗證格式
+            questions = data.get("questions")
             if not isinstance(questions, list):
                 raise ValueError("生成的问题不是列表格式")
-            
-            # 验证每个问题的格式
+
             for q in questions:
                 if not all(k in q for k in ["question", "options", "correct_answer", "explanation"]):
                     raise ValueError("问题缺少必要的字段")
@@ -242,12 +238,12 @@ class RAGService:
                     raise ValueError("问题选项必须是包含4个选项的列表")
                 if q["correct_answer"] not in q["options"]:
                     raise ValueError("正确答案必须是选项之一")
-            
             return questions
         except Exception as e:
             print(f"生成问题时出错: {str(e)}")
-            # 返回默认问题
+            print(f"上下文內容為: {context}")
             return [self._get_default_question()]
+
 
     def generate_questions(self, doc_id: str, context: str, use_existing_store: bool = False) -> List[Dict]:
         """从文档生成问题"""
