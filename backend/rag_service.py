@@ -41,7 +41,7 @@ class RAGService:
             # 使用Ollama的embeddings
             print("正在初始化 Ollama embeddings...")
             try:
-                self.embeddings = OllamaEmbeddings(model="llama2")
+                self.embeddings = OllamaEmbeddings(model="llama3.2")
                 print("Ollama embeddings 初始化成功")
             except Exception as e:
                 print(f"初始化 embeddings 失败: {str(e)}")
@@ -50,7 +50,7 @@ class RAGService:
             # 使用Ollama的LLM
             print("正在初始化 Ollama LLM...")
             try:
-                self.llm = ChatOllama(model="llama2", temperature=0.7)
+                self.llm = ChatOllama(model="llama3.2", temperature=0.7)
                 # 测试连接
                 test_response = self.llm.invoke("测试连接")
                 if not test_response:
@@ -85,6 +85,26 @@ class RAGService:
                 print(f"加载向量存储时出错: {str(e)}")
                 print("将创建新的向量存储")
             
+            self.DIRECT_QUESTION_PROMPT = """
+                你是一个专业的问答游戏出题者。请基于给定的主题生成5个有趣且具有教育意义的问答题目。
+                要求：
+                1. 问题必须与主题相关
+                2. 问题要考察主题中的重要概念和细节
+                3. 选项合理且具有迷惑性
+                4. 解释要详细说明为什么这个答案是正确的
+                5. 选项必须使用"选项A"、"选项B"、"选项C"、"选项D"的格式
+                6. 正确答案必须是选项之一（"选项A"、"选项B"、"选项C"或"选项D"）
+                7. 必须生成5个问题
+
+                直接返回**唯一**的JSON，格式如下：
+                {{
+                "questions": [
+                    {{"question":"问题1","options":["选项A","选项B","选项C","选项D"],"correct_answer":"选项A","explanation":"解释1"}},
+                    {{"question":"问题2","options":["选项A","选项B","选项C","选项D"],"correct_answer":"选项B","explanation":"解释2"}}
+                ]
+                }}
+                主题：{topic}
+                """
             # 初始化直接主题问题生成模板
             self.topic_question_template = ChatPromptTemplate.from_messages([
                 ("system", """你是一个专业的问答游戏出题者。请基于给定的主题生成5个有趣且具有教育意义的问答题目。
@@ -210,10 +230,9 @@ class RAGService:
         """从上下文中生成问题"""
         try:
             # 选择适当的模板
-            template = self.document_question_template if is_document else self.topic_question_template
-
-            # 調用 LLM 生成問題（注意回傳可能是 message、list 或 object）
-            response = self.llm.invoke(template.format_messages(context=context))
+            # 拼接prompt，直接傳字串給llm.invoke
+            prompt = self.DIRECT_QUESTION_PROMPT.format(topic=context)
+            response = self.llm.invoke(prompt)
 
             # 打印 LLM response（debug）
             print(f"LLM invoke 原始返回：{response}")
