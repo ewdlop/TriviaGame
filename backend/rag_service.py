@@ -85,30 +85,6 @@ class RAGService:
                 print(f"加载向量存储时出错: {str(e)}")
                 print("将创建新的向量存储")
             
-            # 初始化文档问题生成模板
-            self.document_question_template = ChatPromptTemplate.from_messages([
-                ("system", """你是一个专业的问答游戏出题者。基于给定的文档内容，生成5个有趣且具有教育意义的问答题目。
-                请确保：
-                1. 问题必须基于提供的文档内容
-                2. 问题要考察文档中的重要概念和细节
-                3. 选项合理且具有迷惑性
-                4. 解释要详细说明为什么这个答案是正确的
-                5. 选项必须使用"选项A"、"选项B"、"选项C"、"选项D"的格式
-                6. 正确答案必须是选项之一（"选项A"、"选项B"、"选项C"或"选项D"）
-                7. 必须生成5个问题
-                
-                请严格按照以下JSON格式返回，不要添加任何其他内容：
-                [
-                    {
-                        "question": "问题文本",
-                        "options": ["选项A", "选项B", "选项C", "选项D"],
-                        "correct_answer": "选项A",
-                        "explanation": "详细解释"
-                    }
-                ]"""),
-                ("user", "文档内容：{context}")
-            ])
-
             # 初始化直接主题问题生成模板
             self.topic_question_template = ChatPromptTemplate.from_messages([
                 ("system", """你是一个专业的问答游戏出题者。请基于给定的主题生成5个有趣且具有教育意义的问答题目。
@@ -122,15 +98,43 @@ class RAGService:
                 7. 必须生成5个问题
                 
                 请严格按照以下JSON格式返回，不要添加任何其他内容：
-                [
-                    {
-                        "question": "问题文本",
-                        "options": ["选项A", "选项B", "选项C", "选项D"],
-                        "correct_answer": "选项A",
-                        "explanation": "详细解释"
-                    }
-                ]"""),
+                {
+                    "questions": [
+                        {
+                            "question": "问题文本",
+                            "options": ["选项A", "选项B", "选项C", "选项D"],
+                            "correct_answer": "选项A",
+                            "explanation": "详细解释"
+                        }
+                    ]
+                }"""),
                 ("user", "主题：{context}")
+            ])
+
+            # 初始化文档问题生成模板
+            self.document_question_template = ChatPromptTemplate.from_messages([
+                ("system", """你是一个专业的问答游戏出题者。基于给定的文档内容，生成5个有趣且具有教育意义的问答题目。
+                请确保：
+                1. 问题必须基于提供的文档内容
+                2. 问题要考察文档中的重要概念和细节
+                3. 选项合理且具有迷惑性
+                4. 解释要详细说明为什么这个答案是正确的
+                5. 选项必须使用"选项A"、"选项B"、"选项C"、"选项D"的格式
+                6. 正确答案必须是选项之一（"选项A"、"选项B"、"选项C"或"选项D"）
+                7. 必须生成5个问题
+                
+                请严格按照以下JSON格式返回，不要添加任何其他内容：
+                {
+                    "questions": [
+                        {
+                            "question": "问题文本",
+                            "options": ["选项A", "选项B", "选项C", "选项D"],
+                            "correct_answer": "选项A",
+                            "explanation": "详细解释"
+                        }
+                    ]
+                }"""),
+                ("user", "文档内容：{context}")
             ])
 
             print("RAGService 初始化完成")
@@ -210,34 +214,40 @@ class RAGService:
         return "\n".join(doc.page_content for doc in docs)
 
     def _generate_questions_from_context(self, context: str, is_document: bool = True) -> List[Dict]:
-        """从上下文生成问题的通用方法"""
+        """从上下文中生成问题"""
         try:
-            print("Generating questions...")
-            # 根据类型选择模板
+            # 选择适当的模板
             template = self.document_question_template if is_document else self.topic_question_template
             
-            # 使用提示模板生成问题
-            chain = template | self.llm
-            response = chain.invoke({"context": context})
+            # 调用LLM生成问题
+            response = self.llm.invoke(template.format_messages(context=context))
             
-            # 提取并解析JSON
+            # 提取JSON
             json_str = self._extract_json_from_response(response.content)
-            questions = json.loads(json_str)
+            data = json.loads(json_str)
             
             # 验证问题格式
+            if not isinstance(data, dict) or "questions" not in data:
+                raise ValueError("生成的问题格式不正确")
+            
+            questions = data["questions"]
+            if not isinstance(questions, list):
+                raise ValueError("生成的问题不是列表格式")
+            
+            # 验证每个问题的格式
             for q in questions:
                 if not all(k in q for k in ["question", "options", "correct_answer", "explanation"]):
-                    raise ValueError("问题格式不正确")
+                    raise ValueError("问题缺少必要的字段")
                 if not isinstance(q["options"], list) or len(q["options"]) != 4:
-                    raise ValueError("选项必须是包含4个选项的列表")
+                    raise ValueError("问题选项必须是包含4个选项的列表")
                 if q["correct_answer"] not in q["options"]:
                     raise ValueError("正确答案必须是选项之一")
             
-            print(f"成功生成 {len(questions)} 个问题")
             return questions
         except Exception as e:
             print(f"生成问题时出错: {str(e)}")
-            return [self._get_default_question() for _ in range(5)]
+            # 返回默认问题
+            return [self._get_default_question()]
 
     def generate_questions(self, doc_id: str, context: str, use_existing_store: bool = False) -> List[Dict]:
         """从文档生成问题"""
@@ -245,7 +255,7 @@ class RAGService:
             if use_existing_store:
                 if not self.vector_store:
                     print("Warning: No existing vector store found")
-                    return [self._get_default_question() for _ in range(5)]
+                    return [self._get_default_question()]
                 print("Using existing vector store...")
             else:
                 print("Creating vector store...")
@@ -255,7 +265,7 @@ class RAGService:
             
         except Exception as e:
             print(f"生成问题时出错: {str(e)}")
-            return [self._get_default_question() for _ in range(5)]
+            return [self._get_default_question()]
 
     def generate_questions_directly(self, topic: str) -> List[Dict]:
         """直接从主题生成问题"""
@@ -269,7 +279,7 @@ class RAGService:
             
         except Exception as e:
             print(f"生成问题时出错: {str(e)}")
-            return [self._get_default_question() for _ in range(5)]
+            return [self._get_default_question()]
     
     def _get_default_question(self) -> Dict:
         """返回默认问题"""
