@@ -39,8 +39,12 @@
 ### macOS 系统依赖安装
 
 ```bash
-brew install libmagic
+brew install libmagic # Mac
 ```
+
+### windows 系统依赖安装
+python-magic-bin==0.4.14 
+
 
 ### 后端设置
 

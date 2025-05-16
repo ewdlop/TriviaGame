@@ -33,6 +33,18 @@ class DocumentService:
         self._cache: Dict[str, Dict] = {}
         self._cache_expiry = timedelta(hours=1)  # 缓存过期时间
 
+        # 初始化向量数据库
+        self._initialize_vector_db()
+
+    def _initialize_vector_db(self):
+        """初始化向量数据库"""
+        # 创建或获取集合
+        self.collection = self.client.get_or_create_collection(
+            name="documents",
+            metadata={"hnsw:space": "cosine"}
+        )
+        print("向量数据库初始化完成")
+
     def _get_file_type(self, file_path: str) -> str:
         """获取文件类型"""
         mime = magic.Magic(mime=True)
@@ -106,15 +118,18 @@ class DocumentService:
             splits = self.text_splitter.split_documents(documents)
             print(f"Split into {len(splits)} chunks")
             
+            # 生成唯一的文档ID
+            doc_id = f"{os.path.basename(file_path)}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            
             # 存储到向量数据库
             print("Storing in vector database...")
             for i, split in enumerate(splits):
                 self.collection.add(
                     documents=[split.page_content],
-                    metadatas=[{"source": file_path}],
-                    ids=[f"{file_path}_{i}"]
+                    metadatas=[{"source": file_path, "doc_id": doc_id}],
+                    ids=[f"{doc_id}_{i}"]
                 )
-            print("Document processing completed")
+            print(f"Document processing completed with ID: {doc_id}")
             
         except Exception as e:
             print(f"Error in process_document: {str(e)}")
@@ -122,8 +137,11 @@ class DocumentService:
 
     def search_documents(self, query: str, k: int = 3) -> List[str]:
         """搜索相关文档片段"""
+        # 生成查询的嵌入向量
+        query_embedding = self.embeddings.embed_query(query)
+        
         results = self.collection.query(
-            query_texts=[query],
+            query_embeddings=[query_embedding],
             n_results=k
         )
         return results['documents'][0] if results['documents'] else []

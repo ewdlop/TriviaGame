@@ -7,7 +7,6 @@ from document_service import DocumentService
 import uvicorn
 import os
 from tempfile import NamedTemporaryFile
-import tempfile
 
 app = FastAPI()
 
@@ -48,7 +47,7 @@ async def upload_file(file: UploadFile = File(...)):
         print(f"File saved to: {temp_path}")
         
         try:
-            # 处理文档
+            # 处理文档并存储到向量数据库
             document_service.process_document(temp_path)
             
             # 获取文档内容
@@ -56,7 +55,7 @@ async def upload_file(file: UploadFile = File(...)):
             
             # 生成问题
             questions = rag_service.generate_questions(
-                "temp_doc",
+                file.filename,  # 使用文件名作为文档ID
                 content
             )
             
@@ -95,28 +94,6 @@ async def generate_questions(request: GenerateRequest):
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
-
-@app.post("/upload")
-async def upload_file_new(file: UploadFile = File(...)):
-    try:
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_path = temp_file.name
-
-        # 获取文档内容
-        content = document_service.get_document_content(temp_path)
-        
-        # 生成问题
-        questions = rag_service.generate_questions(file.filename, content)
-        
-        # 删除临时文件
-        os.unlink(temp_path)
-        
-        return {"questions": questions}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate-directly")
 async def generate_questions_directly(request: GenerateRequest):

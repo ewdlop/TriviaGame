@@ -140,11 +140,6 @@ class RAGService:
             raise ValueError(f"无法从响应中提取有效的JSON: {str(e)}")
 
     def _create_vector_store(self, text: str):
-        """创建向量存储"""
-        # 如果向量存储已存在，直接返回
-        if self.vector_store:
-            print("向量存储已存在，跳过创建")
-            return
             
         print("开始处理文档...")
         # 分割文本
@@ -222,6 +217,7 @@ class RAGService:
                 print(f"正在为第 {i+1} 个文档块生成问题...")
                 print(f"文档块内容: {chunks[:200]}...")  # 只打印前200个字符
                 
+                print("开始生成问题...")
                 # 生成问题
                 response = self.llm.invoke(
                     self.question_template.format_messages(
@@ -230,6 +226,7 @@ class RAGService:
                 )
                 
                 try:
+                    print("提取并解析JSON...")
                     # 提取并解析JSON
                     json_str = self._extract_json_from_response(response.content)
                     questions = json.loads(json_str)
